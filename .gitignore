@@ -1,0 +1,9 @@
+data/words/
+data/words.txt
+data/words.bak
+src/__pycache__/
+model/checkpoint
+model/snapshot-*
+notes/
+*.so
+*.pyc
