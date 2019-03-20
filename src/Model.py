@@ -50,7 +50,7 @@ class Model:
 
 
     def setupCNN(self):
-    "create CNN layers and return output of these layers"
+        "create CNN layers and return output of these layers"
         cnnIn4d = tf.expand_dims(input=self.inputImgs, axis=3)
 
 # list of parameters for the layers

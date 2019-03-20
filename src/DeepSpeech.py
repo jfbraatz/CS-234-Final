@@ -37,7 +37,7 @@ class Model:
 
                 # setup CNN, RNN and CTC
                 self.setupCNN()
-                self.setupRNN()
+                self.setupRNN_new()
                 self.setupCTC()
 
                 # setup optimizer to train NN
@@ -103,8 +103,9 @@ class Model:
             #rnnIn3d = self.cnnOut
 
             # basic cells which is used to build RNN
-            numHidden = 50
-            out, _ = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=3, num_units=numHidden, direction='bidirectional')(rnnIn3d)
+            numHidden = 256
+            out, _ = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=4, num_units=numHidden, direction='bidirectional')(tf.transpose(rnnIn3d, (1, 0, 2)))
+            out = tf.transpose(out, (1, 0, 2))
             #cells = [tf.contrib.rnn.GRUCell(num_units=numHidden) for _ in range(7)] # 7 layers
 
             # stack basic cells
@@ -118,41 +119,41 @@ class Model:
             #concat = tf.concat([fw, bw], 2)
                                                                     
             #out = concat
-            #out = tf.layers.batch_normalization(concat, training=self.is_train)
-            #out = tf.layers.dense(out, 1024)
-            #out = self.clipped_relu(out)
-            #out = tf.layers.dense(out, len(self.charList) + 1)
-            #self.rnnOut3d = out
+            out = tf.layers.batch_normalization(out, training=self.is_train)
+            out = tf.layers.dense(out, 1024)
+            out = self.clipped_relu(out)
+            out = tf.layers.dense(out, len(self.charList) + 1)
+            #self.rnnOut3d = tf.nn.softmax(out)
+            self.rnnOut3d = out
 
-            concat = tf.expand_dims(out, 2)
 
             # project output to chars (including blank): BxTx1x2H -> BxTx1xC -> BxTxC
-            kernel = tf.Variable(tf.truncated_normal([1, 1, numHidden*2, len(self.charList) + 1], stddev=0.1))
-            self.rnnOut3d = tf.squeeze(tf.nn.atrous_conv2d(value=concat, filters=kernel, rate=1, padding='SAME'), axis=[2])
+            #kernel = tf.Variable(tf.truncated_normal([1, 1, numHidden*2, len(self.charList) + 1], stddev=0.1))
+            #self.rnnOut3d = tf.squeeze(tf.nn.atrous_conv2d(value=concat, filters=kernel, rate=1, padding='SAME'), axis=[2])
 
 
 
             #self.rnnOut3d = out
         def setupCNN(self):
-               "create CNN layers and return output of these layers"
-               cnnIn4d = tf.expand_dims(input=self.inputImgs, axis=3)
+            "create CNN layers and return output of these layers"
+            cnnIn4d = tf.expand_dims(input=self.inputImgs, axis=3)
 
-               # list of parameters for the layers
-               kernelVals = [5, 5, 5, 3, 3]
-               featureVals = [1, 32, 64, 128, 128, 256]
-               strideVals = poolVals = [(2,2), (2,2), (1,2), (1,2), (1,2)]
-               numLayers = len(strideVals)
+# list of parameters for the layers
+            kernelVals = [10, 10, 5, 5, 5]
+            featureVals = [1, 32, 64, 128, 128, 256]
+            strideVals = poolVals = [(2,2), (2,2), (1,2), (1,2), (1,2)]
+            numLayers = len(strideVals)
 
-               # create layers
-               pool = cnnIn4d # input to first CNN layer
-               for i in range(numLayers):
-                   kernel = tf.Variable(tf.truncated_normal([kernelVals[i], kernelVals[i], featureVals[i], featureVals[i + 1]], stddev=0.1))
-                   conv = tf.nn.conv2d(pool, kernel, padding='SAME',  strides=(1,1,1,1))
-                   conv_norm = tf.layers.batch_normalization(conv, training=self.is_train)
-                   relu = tf.nn.relu(conv_norm)
-                   pool = tf.nn.max_pool(relu, (1, poolVals[i][0], poolVals[i][1], 1), (1, strideVals[i][0], strideVals[i][1], 1), 'VALID')
+            # create layers
+            pool = cnnIn4d # input to first CNN layer
+            for i in range(numLayers):
+                kernel = tf.Variable(tf.truncated_normal([kernelVals[i], kernelVals[i], featureVals[i], featureVals[i + 1]], stddev=0.1))
+                conv = tf.nn.conv2d(pool, kernel, padding='SAME',  strides=(1,1,1,1))
+                conv_norm = tf.layers.batch_normalization(conv, training=self.is_train)
+                relu = tf.nn.relu(conv_norm)
+                pool = tf.nn.max_pool(relu, (1, poolVals[i][0], poolVals[i][1], 1), (1, strideVals[i][0], strideVals[i][1], 1), 'VALID')
 
-               self.cnnOut4d = pool
+            self.cnnOut4d = pool
 
 
 		
@@ -227,6 +228,7 @@ class Model:
                 tf.summary.scalar('loss', self.loss)
                 self.merged = tf.summary.merge_all()
                 self.file_writer = tf.summary.FileWriter('logs', sess.graph)
+                self.train_writer = tf.summary.FileWriter('logs/train/512_hidden_8_layer_dummy', sess.graph)
 
                 saver = tf.train.Saver(max_to_keep=1) # saver saves model to file
                 modelDir = '../model/'
@@ -307,7 +309,7 @@ class Model:
                 evalList = [self.optimizer, self.loss, self.merged]
                 feedDict = {self.inputImgs : batch.imgs, self.gtTexts : sparse , self.seqLen : [Model.maxTextLen] * numBatchElements, self.learningRate : rate, self.is_train: True}
                 (_, lossVal, summary) = self.sess.run(evalList, feedDict)
-                self.file_writer.add_summary(summary, self.batchesTrained)
+                self.train_writer.add_summary(summary, self.batchesTrained)
                 self.batchesTrained += 1
                 return lossVal
 
